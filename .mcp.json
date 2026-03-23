@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "self-heal-ci": {
+      "type": "channel",
+      "command": "bun",
+      "args": ["run", "src/server.ts"],
+      "cwd": "."
+    }
+  }
+}

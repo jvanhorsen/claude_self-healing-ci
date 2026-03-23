@@ -1,2 +1,18 @@
 # Claude Code
 .claude/
+
+# Dependencies
+node_modules/
+
+# Environment (secrets)
+.env
+.env.local
+
+# OS
+.DS_Store
+
+# Bun
+bun.lockb
+
+# Tunnel configs
+.ngrok.yml

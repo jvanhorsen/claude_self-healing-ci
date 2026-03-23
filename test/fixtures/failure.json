@@ -1,0 +1,16 @@
+{
+  "action": "completed",
+  "workflow_run": {
+    "id": 12345678,
+    "name": "CI",
+    "head_branch": "test-self-heal",
+    "head_sha": "abc1234def5678",
+    "status": "completed",
+    "conclusion": "failure",
+    "html_url": "https://github.com/jvanhorsen/SetWidth/actions/runs/12345678",
+    "repository": {
+      "full_name": "jvanhorsen/SetWidth",
+      "clone_url": "https://github.com/jvanhorsen/SetWidth.git"
+    }
+  }
+}

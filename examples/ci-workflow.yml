@@ -1,0 +1,39 @@
+# CI workflow for SetWidth (Node/Vite/Vitest on Vercel).
+# Copy this to .github/workflows/ci.yml in the SetWidth repo.
+#
+# GitHub automatically sends a workflow_run webhook whenever any workflow
+# completes — no special config needed in this file for that.
+
+name: CI
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm run test:run

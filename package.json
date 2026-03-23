@@ -1,0 +1,17 @@
+{
+  "name": "self-heal-ci",
+  "version": "0.1.0",
+  "description": "Self-healing CI via Claude Code Channels + Discord",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/server.ts",
+    "test:webhook": "bun run test/send-test-webhook.ts"
+  },
+  "dependencies": {
+    "discord.js": "^14.18.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.7.0"
+  }
+}
