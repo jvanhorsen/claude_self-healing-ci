@@ -1,12 +1,31 @@
 # self-heal-ci
 
-**Self-healing CI powered by Claude Code Channels.**
+**A tech demo showing how Claude Code Channels can add a real-time conversational layer and human-in-the-loop control to CI automation.**
 
-When your GitHub Actions build fails, Claude automatically pulls the logs, diagnoses the issue, applies a fix, verifies it locally, and opens a PR — all reported back to your Discord channel.
+Most CI automations are black boxes — they run, they pass or fail, and you get an email with a log. Tools like [claude-code-action](https://github.com/anthropics/claude-code-action) and [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-github-agentic-workflows-public-preview/) can even auto-fix failures, but they still run fire-and-forget in a cloud runner with no way to interact mid-flight.
+
+This project demonstrates a different pattern: using [Claude Code Channels](https://code.claude.com/docs/en/channels-reference) to turn that same CI-fix workflow into a **two-way conversation** where you can watch Claude work, course-correct in real time from Discord, and approve destructive actions from your phone.
 
 > **Note:** Claude Code Channels are in [research preview](https://code.claude.com/docs/en/channels) and require Claude Code v2.1.80+.
 
 ---
+
+## Why This Exists
+
+GitHub Actions can already trigger Claude to fix a broken build. So why build this?
+
+This repo isn't really about CI. It's a **reference implementation for the channels pattern** — the idea that any webhook-driven automation becomes more powerful when you add:
+
+| Capability | Cloud-side CI fix | This approach |
+|---|---|---|
+| Auto-diagnose and fix | Yes | Yes |
+| Run in your local environment (Docker, VPN, private registries) | No | Yes |
+| Watch the AI work in real time | No | Yes |
+| Course-correct mid-fix ("try looking at the config file") | No | Yes |
+| Approve destructive actions from your phone | No | Yes |
+| Conversational escalation when it can't fix it | No | Yes |
+
+CI failure is just the demo. The same pattern works for Sentry alerts, PagerDuty incidents, Stripe webhooks, staging environment monitors — anything that can POST to an HTTP endpoint can become a conversational automation with human-in-the-loop control.
 
 ## How It Works
 
@@ -14,19 +33,46 @@ When your GitHub Actions build fails, Claude automatically pulls the logs, diagn
 GitHub Actions (failure webhook)
         │
         ▼
-  self-heal-ci (MCP channel server)
+  self-heal-ci (MCP channel server, runs locally)
         │
    ┌────┴────┐
    ▼         ▼
 Claude     Discord
 Code       #ci-autopilot
+(local)    (your phone)
 ```
 
 1. GitHub Actions completes a workflow run and sends a webhook
-2. This channel server filters for failures and forwards them to Claude Code
+2. The channel server filters for failures and forwards them to Claude Code
 3. Claude checks out the branch, reads the logs, diagnoses the error, and applies a fix
-4. If local tests pass, Claude commits, pushes, and opens a PR
-5. The full cycle is reported to Discord — and destructive actions (like `git push`) require your approval via Discord's permission relay
+4. If local tests pass, Claude commits and pushes — **but only after you approve in Discord**
+5. The full cycle is reported to Discord, and you can reply with follow-up instructions at any point
+
+### The Interesting Part: Permission Relay
+
+When Claude wants to run something like `git push`, it doesn't just do it. Claude Code surfaces a permission prompt with a 5-letter code, and the channel server forwards it to Discord:
+
+```
+🔐 Permission Request
+Claude wants to run Bash: git push origin feature-auth
+Reply "yes xkrmn" or "no xkrmn"
+```
+
+You reply from your phone. The verdict is relayed back. The local terminal dialog also stays open — whichever answer arrives first is applied. This is the core UX innovation that cloud-side automations can't replicate.
+
+### Interactive Debugging
+
+When Claude can't fix something, it doesn't just push a partial fix and leave. It tells you in Discord what it's stuck on, and you can reply with context:
+
+> **Claude:** "Tests still failing — the `UserService` mock expects a `tenantId` field that doesn't exist in the type definition. This might be intentional. Should I add it to the interface or update the test?"
+>
+> **You:** "We added multi-tenancy last week. Add tenantId to the User interface and default it to 'default' in the test fixtures."
+>
+> **Claude:** "Done. Tests passing. PR #248 updated."
+
+That back-and-forth is impossible with fire-and-forget CI automations.
+
+---
 
 ## Quickstart
 
@@ -122,6 +168,8 @@ git push origin test-self-heal
 
 Check your Discord channel — you should see Claude investigating and (hopefully) fixing the issue.
 
+---
+
 ## Project Structure
 
 ```
@@ -144,45 +192,50 @@ self-heal-ci/
 
 ## Architecture
 
-### Modular chat platform
+### Swappable chat platform
 
-The Discord integration implements a `ChatPlatform` interface (`send`, `onMessage`, `connect`, `disconnect`). To use Slack or Telegram instead, create a new module that implements the same interface and swap the import in `server.ts`. The MCP layer and Claude's instructions don't change.
-
-### Permission relay
-
-When Claude wants to run a destructive command (like `git push`), Claude Code sends a permission request to the channel server. The server forwards it to Discord as a formatted message with a 5-letter approval code. You reply `yes abcde` or `no abcde` in Discord, and the verdict is relayed back. You can also approve from the local terminal — whichever arrives first is applied.
+The Discord integration implements a `ChatPlatform` interface with four methods: `send`, `onMessage`, `connect`, `disconnect`. To use Slack or Telegram instead, create a new module that implements the same interface and swap the import in `server.ts`. The MCP channel layer and Claude's instructions don't change at all — that's the point.
 
 ### Safety guardrails
 
-Claude's instructions enforce strict boundaries:
+Claude's instructions (in `src/instructions.ts`) enforce strict boundaries: no force pushes, no direct pushes to main/master, only touch files related to the failure, always verify locally before pushing, always report back to Discord even when it can't fix the issue. The permission relay adds a second layer — even if the instructions allowed something risky, you'd still have to approve it.
 
-- Never force pushes
-- Never modifies main/master directly
-- Only touches files related to the failure
-- Always verifies fixes locally before pushing
-- Always reports back to Discord, even on failure
+### Escalation path
 
-### Escalation
+If Claude can't fix an issue after one attempt, it reports its diagnosis, what it tried, and why it didn't work. You can reply in Discord with follow-up instructions and Claude will execute them. The session stays alive and listening — it's a conversation, not a batch job.
 
-If Claude can't fix an issue, it reports its diagnosis, what it tried, and what a human should look at. You can reply in Discord with follow-up instructions ("try reverting the last commit", "check the lockfile") and Claude will execute them.
+---
+
+## Adapt This Pattern
+
+The channel server structure here is designed to be forked and adapted. Some ideas for other webhook sources that would work with minimal changes:
+
+- **Sentry/Datadog** — error spike webhook triggers Claude to read logs, trace the error, and propose a fix
+- **Stripe** — payment failure webhook triggers Claude to check your integration code and flag potential issues
+- **PagerDuty** — incident webhook triggers Claude to pull runbooks and start diagnosis, with you approving remediation steps from your phone
+- **Cron / health checks** — scheduled pings that trigger Claude to proactively run your test suite and report drift
+
+The webhook receiver (`src/webhook.ts`) is the only file you'd need to modify for a different event source. Everything else — the MCP channel wiring, Discord integration, permission relay — stays the same.
+
+---
 
 ## Limitations
 
 - **Research preview**: Custom channels require `--dangerously-load-development-channels` until added to the approved allowlist
-- **Local execution**: The repo must be cloned locally — this isn't a cloud service
+- **Local execution**: The repo must be cloned locally — this runs on your machine, not in the cloud
 - **Tunnel required**: GitHub needs a public URL to send webhooks to your local port
 - **Single repo per session**: Run multiple Claude Code sessions for multiple repos
 - **Auth**: Requires claude.ai login (not API keys). Team/Enterprise orgs must enable channels in admin settings
 
 ## Contributing
 
-PRs welcome. Some areas that would be great to expand:
+PRs welcome. Some areas that would be particularly valuable:
 
-- **Slack integration** — implement `ChatPlatform` for Slack
-- **Telegram integration** — implement `ChatPlatform` for Telegram
-- **Multi-repo support** — route webhooks to different local clones based on `repository.full_name`
-- **Fix history** — log diagnoses and fixes to build a pattern database
-- **Metrics dashboard** — track auto-fix success rate, mean-time-to-fix, etc.
+- **Slack / Telegram integration** — implement `ChatPlatform` for other platforms
+- **Additional webhook sources** — Sentry, PagerDuty, Stripe, etc.
+- **Multi-repo routing** — route webhooks to different local clones based on `repository.full_name`
+- **Fix history** — log diagnoses and fixes to build a pattern database over time
+- **Demo video / GIF** — a screen recording of the full flow would help people understand the UX
 
 ## License
 
@@ -190,4 +243,4 @@ MIT — see [LICENSE](LICENSE).
 
 ## Disclaimer
 
-This tool writes code and pushes to git branches on your behalf. It is designed as a **first responder**, not a replacement for code review. All fixes go through your normal PR process. Use at your own risk.
+This tool writes code and pushes to git branches on your behalf. It is designed as a **first responder and tech demo**, not a replacement for code review. All fixes go through your normal PR review process. The permission relay ensures you approve every destructive action. Use at your own risk.
