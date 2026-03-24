@@ -7,10 +7,10 @@
     "head_sha": "abc1234def5678",
     "status": "completed",
     "conclusion": "failure",
-    "html_url": "https://github.com/jvanhorsen/SetWidth/actions/runs/12345678",
+    "html_url": "https://github.com/OWNER/REPO/actions/runs/12345678",
     "repository": {
-      "full_name": "jvanhorsen/SetWidth",
-      "clone_url": "https://github.com/jvanhorsen/SetWidth.git"
+      "full_name": "OWNER/REPO",
+      "clone_url": "https://github.com/OWNER/REPO.git"
     }
   }
 }

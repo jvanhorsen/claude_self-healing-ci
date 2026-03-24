@@ -8,7 +8,9 @@
     "test:webhook": "bun run test/send-test-webhook.ts"
   },
   "dependencies": {
-    "discord.js": "^14.18.0"
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "discord.js": "^14.18.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",

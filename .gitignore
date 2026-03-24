@@ -8,11 +8,15 @@ node_modules/
 .env
 .env.local
 
+# MCP config and wrapper (contain machine-specific paths)
+.mcp.json
+src/wrapper.sh
+
 # OS
 .DS_Store
 
 # Bun
-bun.lockb
+# bun.lock is committed intentionally (reproducible installs)
 
 # Tunnel configs
 .ngrok.yml

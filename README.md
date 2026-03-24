@@ -38,7 +38,7 @@ GitHub Actions (failure webhook)
    ┌────┴────┐
    ▼         ▼
 Claude     Discord
-Code       #ci-autopilot
+Code       #ci-channel
 (local)    (your phone)
 ```
 
@@ -74,24 +74,46 @@ That back-and-forth is impossible with fire-and-forget CI automations.
 
 ---
 
-## Quickstart
-
-### Prerequisites
+## Prerequisites
 
 - [Bun](https://bun.sh) v1.1+
 - [Claude Code](https://code.claude.com) v2.1.80+ (logged in via claude.ai)
 - [gh CLI](https://cli.github.com/) authenticated (`gh auth login`)
-- A Discord bot ([create one here](https://discord.com/developers/applications))
+- A Discord bot ([Step 1 below](#step-1-create-a-discord-bot))
+- A tunnel for receiving webhooks ([Step 4 below](#step-4-set-up-a-tunnel))
 
-### 1. Clone and install
+---
+
+## Setup
+
+### Step 1: Create a Discord Bot
+
+1. Go to [discord.com/developers/applications](https://discord.com/developers/applications) and click **New Application**
+2. Name it something like `self-heal-ci`
+3. Go to the **Bot** tab:
+   - Click **Reset Token** and copy the token — you'll need this for `.env`
+   - Scroll down to **Privileged Gateway Intents** and enable **Message Content Intent**
+4. Go to **OAuth2** → **URL Generator**:
+   - Under **Scopes**, check `bot`
+   - Under **Bot Permissions**, check: `Send Messages`, `Read Messages/View Channels`, `Add Reactions`
+   - Copy the generated URL at the bottom
+5. Open that URL in your browser to invite the bot to your Discord server
+6. Create a channel for CI reports (e.g., `#ci-autopilot`) or use an existing one
+7. Get your IDs (enable Developer Mode in Discord Settings → App Settings → Advanced):
+   - Right-click the channel → **Copy Channel ID**
+   - Right-click your own username → **Copy User ID**
+
+### Step 2: Clone and Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/self-heal-ci.git
+git clone https://github.com/jvanhorsen/claude_self-healing-ci.git self-heal-ci
 cd self-heal-ci
 bun install
 ```
 
-### 2. Configure environment
+> **Don't have Bun?** Install it with: `curl -fsSL https://bun.sh/install | bash`
+
+### Step 3: Configure Environment
 
 ```bash
 cp .env.example .env
@@ -101,72 +123,137 @@ Edit `.env` with your values:
 
 | Variable | Required | Description |
 |---|---|---|
-| `DISCORD_BOT_TOKEN` | Yes | Bot token from Discord Developer Portal |
-| `DISCORD_CHANNEL_ID` | Yes | Channel ID for CI reports |
-| `ALLOWED_DISCORD_USERS` | Yes | Comma-separated Discord user IDs |
-| `GITHUB_WEBHOOK_SECRET` | No | HMAC secret for webhook verification |
-| `WEBHOOK_PORT` | No | HTTP port (default: 9090) |
+| `DISCORD_BOT_TOKEN` | Yes | Bot token from Step 1 |
+| `DISCORD_CHANNEL_ID` | Yes | Channel ID from Step 1 |
+| `ALLOWED_DISCORD_USERS` | Yes | Your Discord user ID from Step 1 (comma-separated for multiple users) |
+| `GITHUB_WEBHOOK_SECRET` | Recommended | HMAC secret for webhook verification (generate with `openssl rand -hex 20`) |
+| `WEBHOOK_PORT` | No | HTTP port for webhooks (default: `9090`) |
 
-### 3. Set up Discord bot
+### Step 4: Set Up a Tunnel
 
-1. Create an application at [discord.com/developers](https://discord.com/developers/applications)
-2. Go to **Bot** → copy the token → paste into `.env`
-3. Enable **Message Content Intent** under Privileged Gateway Intents
-4. Go to **OAuth2** → URL Generator → select `bot` scope → permissions: Send Messages, Read Messages, Add Reactions
-5. Open the generated URL to invite the bot to your server
-6. Create a `#ci-autopilot` channel (or use an existing one)
-7. Copy the channel ID (Developer Mode → right-click → Copy ID)
-
-### 4. Set up GitHub webhook
-
-1. Go to your repo → **Settings** → **Webhooks** → **Add webhook**
-2. **Payload URL**: your tunnel URL + `/github` (see below)
-3. **Content type**: `application/json`
-4. **Secret**: the value from your `.env` (generate one with `openssl rand -hex 20`)
-5. **Events**: select **Workflow runs** only
-
-Since this runs locally, you need a tunnel to receive webhooks:
+Since this runs locally, GitHub needs a public URL to send webhooks to your machine. Pick one:
 
 ```bash
-# Option A: ngrok
-ngrok http 9090
-
-# Option B: cloudflared (no account needed)
+# Option A: cloudflared (no account needed)
+brew install cloudflared
 cloudflared tunnel --url http://localhost:9090
+
+# Option B: ngrok
+brew install ngrok
+ngrok http 9090
 ```
 
-### 5. Launch
+Copy the public URL it gives you (e.g., `https://abc123.trycloudflare.com`). You'll need it for the next step.
 
-Navigate to the root of the repo you want to monitor, then copy the `.mcp.json` from this project into it (or merge with your existing one):
+> **Important:** Keep the tunnel running in its own terminal tab whenever you're using self-heal-ci.
+
+### Step 5: Add a CI Workflow to Your Target Repo
+
+Your target repo needs a GitHub Actions workflow that runs CI checks. An example is provided in `examples/ci-workflow.yml`. Copy and adapt it:
 
 ```bash
-cp /path/to/self-heal-ci/.mcp.json ./
+# In your target repo
+mkdir -p .github/workflows
 ```
 
-Start Claude Code with the channel:
+> **Tip:** On macOS, Finder hides dotfiles by default. Use the terminal to create `.github/workflows/`, or press `Cmd+Shift+.` in Finder to toggle visibility.
+
+Create `.github/workflows/ci.yml` with your project's build/test commands. The example covers a Node.js project with lint, type-check, build, and test steps. Adapt to your stack.
+
+When any workflow in the repo fails, GitHub automatically sends a `workflow_run` webhook — no special config needed in the workflow file itself.
+
+### Step 6: Set Up the GitHub Webhook
+
+1. Go to your target repo → **Settings** → **Webhooks** → **Add webhook**
+2. **Payload URL**: your tunnel URL + `/github` (e.g., `https://abc123.trycloudflare.com/github`)
+3. **Content type**: **`application/json`** (this is critical — `x-www-form-urlencoded` will not work)
+4. **Secret**: the same value you put in `.env` for `GITHUB_WEBHOOK_SECRET` (leave blank if you didn't set one)
+5. Under **Which events would you like to trigger this webhook?**, select **Let me select individual events**, then check only **Workflow runs**
+6. Click **Add webhook**
+
+### Step 7: Configure the MCP Channel Server
+
+The MCP channel server needs to be registered in a `.mcp.json` file in your **target repo** (the repo Claude will monitor and fix), not in this project.
+
+**Create the wrapper script:**
+
+```bash
+# In the self-heal-ci directory
+cp src/wrapper.sh.example src/wrapper.sh
+chmod +x src/wrapper.sh
+```
+
+Edit `src/wrapper.sh` and update the paths:
+- Set the `cd` path to your self-heal-ci directory
+- Set the `bun` path (run `which bun` to find it; if `bun` is in your PATH, just use `bun`)
+
+**Create the MCP config in your target repo:**
+
+```bash
+# In your target repo
+cp /path/to/self-heal-ci/.mcp.json.example .mcp.json
+```
+
+Edit `.mcp.json` and set the `command` path to your `wrapper.sh`:
+
+```json
+{
+  "mcpServers": {
+    "self-heal-ci": {
+      "command": "/full/path/to/self-heal-ci/src/wrapper.sh",
+      "args": [],
+      "env": {}
+    }
+  }
+}
+```
+
+> **Important:** The `.mcp.json` contains machine-specific paths. Add it to your target repo's `.gitignore` if the repo is shared.
+
+### Step 8: Launch
+
+Open a terminal in your **target repo** and start Claude Code with the channel flag:
 
 ```bash
 claude --dangerously-load-development-channels server:self-heal-ci
 ```
 
-### 6. Test it
+You should see:
+- `Listening for channel messages from: server:self-heal-ci` in the Claude Code header
+- Your Discord bot come online and post a message in your channel
 
-Send a simulated failure webhook:
+Verify the MCP server is connected by typing `/mcp` in the Claude Code session — `self-heal-ci` should show as **connected**.
+
+### Step 9: Test It
+
+**Quick test (simulated webhook):**
+
+In a separate terminal, from the self-heal-ci directory:
 
 ```bash
 bun run test:webhook
 ```
 
-Or trigger a real failure:
+You should see the failure alert appear in Discord. (Note: if you have `GITHUB_WEBHOOK_SECRET` set, the test webhook won't pass signature verification — temporarily comment it out in `.env` for this test, or skip to the real test below.)
+
+**Real test (trigger an actual CI failure):**
+
+In your target repo:
 
 ```bash
 git checkout -b test-self-heal
-echo "const x: number = 'oops'" >> src/index.ts
-git add src/index.ts && git commit -m "test: break the build"
+# Introduce an error — e.g., a type error, missing import, or failing test
+git add . && git commit -m "test: break the build"
 git push origin test-self-heal
 ```
 
-Check your Discord channel — you should see Claude investigating and (hopefully) fixing the issue.
+Watch the flow:
+1. GitHub Actions runs and fails
+2. The webhook fires to your tunnel
+3. Discord shows the failure alert
+4. Claude Code starts investigating in your terminal
+5. Claude reports findings to Discord
+6. If Claude wants to push a fix, you'll get a permission prompt in Discord
 
 ---
 
@@ -175,16 +262,22 @@ Check your Discord channel — you should see Claude investigating and (hopefull
 ```
 self-heal-ci/
 ├── src/
-│   ├── server.ts          # Main entry point — wires everything together
-│   ├── config.ts          # Environment variable loader with validation
-│   ├── discord.ts         # Discord bot (implements ChatPlatform interface)
-│   ├── webhook.ts         # GitHub webhook HTTP server
-│   └── instructions.ts    # Claude's system prompt (diagnosis + fix strategy)
+│   ├── server.ts            # Main entry — MCP channel server with Discord + webhook
+│   ├── config.ts            # Environment variable loader with validation
+│   ├── discord.ts           # Discord bot (implements ChatPlatform interface)
+│   ├── webhook.ts           # GitHub webhook HTTP server
+│   ├── types.ts             # Shared TypeScript interfaces
+│   ├── instructions.ts      # Claude's system prompt (diagnosis + fix strategy)
+│   ├── wrapper.sh.example   # Template for the launcher script
+│   └── wrapper.sh           # Your local launcher (gitignored, machine-specific paths)
 ├── test/
+│   ├── send-test-webhook.ts # Sends a simulated failure webhook
 │   └── fixtures/
-│       └── failure.json   # Sample webhook payload for testing
-├── .env.example           # Environment variable template
-├── .mcp.json              # MCP server configuration for Claude Code
+│       └── failure.json     # Sample webhook payload
+├── examples/
+│   └── ci-workflow.yml      # Example GitHub Actions CI workflow
+├── .env.example             # Environment variable template
+├── .mcp.json.example        # MCP server config template
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -192,17 +285,53 @@ self-heal-ci/
 
 ## Architecture
 
-### Swappable chat platform
+### MCP Channel Server
+
+The server uses the [@modelcontextprotocol/sdk](https://www.npmjs.com/package/@modelcontextprotocol/sdk) to implement a Claude Code channel. It declares three capabilities:
+
+- **`claude/channel`** — registers a notification listener so it can push events (CI failures, Discord messages) into Claude's context
+- **`claude/channel/permission`** — opts in to permission relay, forwarding tool approval prompts to Discord
+- **`tools`** — exposes a `reply` tool so Claude can send messages back to Discord
+
+Claude Code spawns the server as a subprocess and communicates over stdio. The wrapper script (`src/wrapper.sh`) handles setting the working directory so Bun can find the `.env` file and `node_modules`.
+
+### Swappable Chat Platform
 
 The Discord integration implements a `ChatPlatform` interface with four methods: `send`, `onMessage`, `connect`, `disconnect`. To use Slack or Telegram instead, create a new module that implements the same interface and swap the import in `server.ts`. The MCP channel layer and Claude's instructions don't change at all — that's the point.
 
-### Safety guardrails
+### Safety Guardrails
 
 Claude's instructions (in `src/instructions.ts`) enforce strict boundaries: no force pushes, no direct pushes to main/master, only touch files related to the failure, always verify locally before pushing, always report back to Discord even when it can't fix the issue. The permission relay adds a second layer — even if the instructions allowed something risky, you'd still have to approve it.
 
-### Escalation path
+### Escalation Path
 
 If Claude can't fix an issue after one attempt, it reports its diagnosis, what it tried, and why it didn't work. You can reply in Discord with follow-up instructions and Claude will execute them. The session stays alive and listening — it's a conversation, not a batch job.
+
+---
+
+## Troubleshooting
+
+### MCP server shows "failed" in `/mcp`
+
+- **Port in use:** Run `lsof -ti:9090` to check. Kill stale processes with `lsof -ti:9090 | xargs kill -9`. Only one instance of the server can run at a time.
+- **Wrapper script not found:** Make sure `src/wrapper.sh` exists, is executable (`chmod +x`), and the path in `.mcp.json` is correct.
+- **Bun not in PATH:** Use the full path to bun in `wrapper.sh` (find it with `which bun` in a terminal where bun works).
+- **Multiple Claude sessions:** If you have Claude Code open in both the self-heal-ci directory AND the target repo, and both have `.mcp.json`, they'll both try to start the server. Only the target repo needs it.
+- **Process never starts:** If the debug log never appears, the `.mcp.json` format may be wrong. Use `claude mcp add-json` to add it: `claude mcp add-json self-heal-ci '{"command":"/path/to/wrapper.sh","args":[],"env":{}}'`
+
+### Webhook not arriving
+
+- **Wrong content type:** The GitHub webhook **must** be set to `application/json`, not `application/x-www-form-urlencoded` (GitHub's default).
+- **Missing `/github` path:** The webhook URL must end with `/github` (e.g., `https://your-tunnel.com/github`).
+- **Tunnel not running:** Make sure your tunnel is active and pointing to `localhost:9090`.
+- **Signature mismatch:** If you set `GITHUB_WEBHOOK_SECRET`, make sure the same value is in both `.env` and GitHub's webhook settings.
+- Check GitHub's **Settings → Webhooks → Recent Deliveries** for delivery status and response codes.
+
+### Discord bot not responding
+
+- **Message Content Intent:** Make sure it's enabled in the Discord Developer Portal under Bot → Privileged Gateway Intents.
+- **Wrong channel ID:** Double-check `DISCORD_CHANNEL_ID` in `.env`. Enable Developer Mode in Discord to copy IDs.
+- **User not authorized:** Your Discord user ID must be in `ALLOWED_DISCORD_USERS` in `.env`.
 
 ---
 
@@ -222,7 +351,7 @@ The webhook receiver (`src/webhook.ts`) is the only file you'd need to modify fo
 ## Limitations
 
 - **Research preview**: Custom channels require `--dangerously-load-development-channels` until added to the approved allowlist
-- **Local execution**: The repo must be cloned locally — this runs on your machine, not in the cloud
+- **Local execution**: The target repo must be cloned locally — this runs on your machine, not in the cloud
 - **Tunnel required**: GitHub needs a public URL to send webhooks to your local port
 - **Single repo per session**: Run multiple Claude Code sessions for multiple repos
 - **Auth**: Requires claude.ai login (not API keys). Team/Enterprise orgs must enable channels in admin settings

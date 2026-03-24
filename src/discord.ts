@@ -39,7 +39,7 @@ export class DiscordBot implements ChatPlatform {
     // Wait for ready
     await new Promise<void>((resolve) => {
       this.client.once("ready", () => {
-        console.log(`[discord] Logged in as ${this.client.user?.tag}`);
+        console.error(`[discord] Logged in as ${this.client.user?.tag}`);
         resolve();
       });
     });
@@ -52,12 +52,12 @@ export class DiscordBot implements ChatPlatform {
       );
     }
     this.channel = ch;
-    console.log(`[discord] Watching channel #${this.channel.name}`);
+    console.error(`[discord] Watching channel #${this.channel.name}`);
   }
 
   async disconnect(): Promise<void> {
     this.client.destroy();
-    console.log("[discord] Disconnected");
+    console.error("[discord] Disconnected");
   }
 
   async send(text: string): Promise<void> {
@@ -83,7 +83,7 @@ export class DiscordBot implements ChatPlatform {
 
     // Check if user is allowed
     if (!this.config.allowedDiscordUsers.includes(message.author.id)) {
-      console.log(
+      console.error(
         `[discord] Ignoring message from unauthorized user: ${message.author.tag}`
       );
       return;
@@ -92,7 +92,7 @@ export class DiscordBot implements ChatPlatform {
     const text = message.content.trim();
     if (!text) return;
 
-    console.log(`[discord] Message from ${message.author.tag}: ${text}`);
+    console.error(`[discord] Message from ${message.author.tag}: ${text}`);
     for (const handler of this.messageHandlers) {
       handler(text, message.author.tag);
     }

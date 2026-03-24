@@ -41,14 +41,14 @@ export class WebhookServer {
       },
     });
 
-    console.log(
+    console.error(
       `[webhook] Listening on http://localhost:${this.config.webhookPort}`
     );
   }
 
   stop(): void {
     this.server?.stop();
-    console.log("[webhook] Stopped");
+    console.error("[webhook] Stopped");
   }
 
   private async handleGitHubWebhook(req: Request): Promise<Response> {
@@ -58,7 +58,7 @@ export class WebhookServer {
     if (this.config.githubWebhookSecret) {
       const signature = req.headers.get("x-hub-signature-256");
       if (!signature || !(await this.verifySignature(body, signature))) {
-        console.log("[webhook] Invalid signature — rejecting");
+        console.error("[webhook] Invalid signature — rejecting");
         return new Response("Invalid signature", { status: 401 });
       }
     }
@@ -81,13 +81,13 @@ export class WebhookServer {
       payload.action !== "completed" ||
       payload.workflow_run.conclusion !== "failure"
     ) {
-      console.log(
+      console.error(
         `[webhook] Ignoring: action=${payload.action}, conclusion=${payload.workflow_run.conclusion}`
       );
       return new Response("Not a failure", { status: 200 });
     }
 
-    console.log(
+    console.error(
       `[webhook] Failure detected: ${payload.workflow_run.name} on ${payload.workflow_run.head_branch}`
     );
 

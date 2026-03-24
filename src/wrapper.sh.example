@@ -1,0 +1,13 @@
+#!/bin/bash
+# Wrapper script for the self-heal-ci MCP channel server.
+# Claude Code spawns this as a subprocess via .mcp.json.
+#
+# Copy this file to wrapper.sh and update the paths below:
+#   cp src/wrapper.sh.example src/wrapper.sh
+#   chmod +x src/wrapper.sh
+
+# Change to the self-heal-ci project root (where .env lives)
+cd /full/path/to/self-heal-ci
+
+# Launch the server with bun (use full path if bun isn't in your default PATH)
+exec bun ./src/server.ts

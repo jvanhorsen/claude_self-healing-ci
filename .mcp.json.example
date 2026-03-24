@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "self-heal-ci": {
+      "command": "/full/path/to/self-heal-ci/src/wrapper.sh",
+      "args": [],
+      "env": {}
+    }
+  }
+}
